@@ -13,7 +13,6 @@ void main() async {
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return const MaterialApp(
@@ -25,7 +24,6 @@ class MyApp extends StatelessWidget {
 
 class BluetoothPage extends StatefulWidget {
   const BluetoothPage({super.key});
-
   @override
   BluetoothPageState createState() => BluetoothPageState();
 }
@@ -37,6 +35,8 @@ class BluetoothPageState extends State<BluetoothPage> {
   List<BluetoothDevice> devices = [];
   BluetoothDevice? selectedDevice;
   bool loadingDevices = true;
+
+  int sogliaCorrente = 100; // Soglia locale memorizzata nell'app
 
   @override
   void initState() {
@@ -80,10 +80,21 @@ class BluetoothPageState extends State<BluetoothPage> {
       setState(() => isConnected = true);
 
       connection!.input!.listen((data) {
-        final message = String.fromCharCodes(data);
+        final message = String.fromCharCodes(data).trim();
         setState(() {
-          messages.add(message.trim());
+          messages.add(message);
           if (messages.length > 50) messages.removeAt(0);
+
+          if (message.startsWith('Soglia aggiornata:')) {
+            final sogliaValue = int.tryParse(message.replaceAll(RegExp(r'[^
+\d]'), ''));
+            if (sogliaValue != null) sogliaCorrente = sogliaValue;
+          }
+          if (message.startsWith('Soglia attuale:')) {
+            final sogliaValue = int.tryParse(message.replaceAll(RegExp(r'[^
+\d]'), ''));
+            if (sogliaValue != null) sogliaCorrente = sogliaValue;
+          }
         });
       }).onDone(() {
         setState(() {
@@ -92,14 +103,14 @@ class BluetoothPageState extends State<BluetoothPage> {
         });
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Connessione terminata dall\'ESP32')),
+          const SnackBar(content: Text('Connessione terminata dall\'ESP32')), 
         );
       });
     } catch (e) {
       debugPrint('Errore connessione: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Errore di connessione: $e')),
+        SnackBar(content: Text('Errore di connessione: $e')), 
       );
     }
   }
@@ -112,7 +123,7 @@ class BluetoothPageState extends State<BluetoothPage> {
         connection = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Disconnesso dall\'ESP32')),
+        const SnackBar(content: Text('Disconnesso dall\'ESP32')), 
       );
     }
   }
@@ -126,9 +137,35 @@ class BluetoothPageState extends State<BluetoothPage> {
       debugPrint('Non connesso!');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Non connesso!')),
+        const SnackBar(content: Text('Non connesso!')), 
       );
     }
+  }
+
+  // Richiesta soglia allarme da ESP32
+  void getSogliaFromESP32() {
+    sendCommand('GET_SOGLIA');
+  }
+
+  // --- Apertura pagina soglia ---
+  void openSogliaMenu() async {
+    getSogliaFromESP32(); // Richiede la soglia reale all'apertura
+    final nuovaSoglia = await Navigator.push<int>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SogliaPage(
+          sogliaAttuale: sogliaCorrente,
+          isConnected: isConnected,
+          sendSogliaCallback: (val) {
+            sendCommand('SOGLIA:\$val');
+            setState(() {
+              sogliaCorrente = val;
+            });
+          },
+        ),
+      ),
+    );
+    if (nuovaSoglia != null) setState(() => sogliaCorrente = nuovaSoglia);
   }
 
   @override
@@ -173,7 +210,7 @@ class BluetoothPageState extends State<BluetoothPage> {
                               items: devices.map((device) {
                                 return DropdownMenuItem(
                                   value: device,
-                                  child: Text("${device.name} (${device.address})"),
+                                  child: Text("\${device.name} (\${device.address})"),
                                 );
                               }).toList(),
                               onChanged: isConnected
@@ -216,6 +253,18 @@ class BluetoothPageState extends State<BluetoothPage> {
                 child: const Text("Test Clacson"),
               ),
               const SizedBox(height: 18),
+              ElevatedButton(
+                onPressed: isConnected ? openSogliaMenu : null,
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+                child: const Text("Modifica soglia allarme"),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                "Soglia corrente: \${sogliaCorrente}",
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 18),
               const Text(
                 "Messaggi da ESP32:",
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -240,6 +289,90 @@ class BluetoothPageState extends State<BluetoothPage> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// --- Pagina menu soglia ---
+class SogliaPage extends StatefulWidget {
+  final int sogliaAttuale;
+  final bool isConnected;
+  final Function(int) sendSogliaCallback;
+  const SogliaPage({
+    super.key,
+    required this.sogliaAttuale,
+    required this.isConnected,
+    required this.sendSogliaCallback,
+  });
+
+  @override
+  State<SogliaPage> createState() => _SogliaPageState();
+}
+
+class _SogliaPageState extends State<SogliaPage> {
+  late TextEditingController _controller;
+  late int sogliaVisualizzata;
+
+  @override
+  void initState() {
+    super.initState();
+    sogliaVisualizzata = widget.sogliaAttuale;
+    _controller = TextEditingController(text: sogliaVisualizzata.toString());
+  }
+
+  void salvaSoglia() {
+    final val = int.tryParse(_controller.text);
+    if (val != null && val > 0 && val < 5000) {
+      setState(() => sogliaVisualizzata = val);
+      if (widget.isConnected) {
+        widget.sendSogliaCallback(val);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Soglia inviata: \$val')), 
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Non connesso!')), 
+        );
+      }
+      Navigator.pop(context, val);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Inserisci un valore valido tra 1 e 5000')), 
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Modifica soglia allarme')), 
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Soglia attuale: \$sogliaVisualizzata',
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 28),
+            TextField(
+              controller: _controller,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Nuova soglia',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: salvaSoglia,
+              child: const Text('Salva'),
+            ),
+          ],
         ),
       ),
     );
