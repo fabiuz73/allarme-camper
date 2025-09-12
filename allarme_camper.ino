@@ -1,10 +1,14 @@
 #include "BluetoothSerial.h"
+#include <TFT_eSPI.h>
+
 BluetoothSerial SerialBT;
+TFT_eSPI tft = TFT_eSPI();
 
 // Pin collegamento hardware
-const int ledVerde = 12;
-const int ledRosso = 13;
-const int releClacson = 14;
+const int rgbLedR = 12;  // RGB LED Red pin
+const int rgbLedG = 13;  // RGB LED Green pin  
+const int rgbLedB = 14;  // RGB LED Blue pin
+const int releClacson = 27; // Relay pin moved to avoid conflict
 
 // Pin accelerometro ADXL335 (GY-61)
 const int xPin = 34;
@@ -17,21 +21,92 @@ const int sogliaMovimento = 100;
 const int centro = 2048;
 
 bool allarmeInserito = false;
+bool bluetoothConnesso = false;
+unsigned long ultimoBlinkLed = 0;
+bool statoLedRosso = false;
+
+// Funzioni per controllo RGB LED
+void setRgbLed(int r, int g, int b) {
+  digitalWrite(rgbLedR, r ? HIGH : LOW);
+  digitalWrite(rgbLedG, g ? HIGH : LOW);
+  digitalWrite(rgbLedB, b ? HIGH : LOW);
+}
+
+void rgbLedOff() {
+  setRgbLed(0, 0, 0);
+}
+
+void rgbLedGreen() {
+  setRgbLed(0, 1, 0);
+}
+
+void rgbLedRed() {
+  setRgbLed(1, 0, 0);
+}
+
+// Funzioni per controllo display
+void aggiornaDisplay() {
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
+  
+  if (!bluetoothConnesso) {
+    tft.setCursor(10, 50);
+    tft.println("ALLARME CAMPER");
+    tft.setCursor(10, 80);
+    tft.println("NON CONNESSO");
+  } else if (!allarmeInserito) {
+    tft.setCursor(10, 50);
+    tft.println("ALLARME");
+    tft.setCursor(10, 80);
+    tft.println("CONNESSO");
+  } else {
+    tft.setCursor(10, 50);
+    tft.println("ALLARME");
+    tft.setCursor(10, 80);
+    tft.println("INSERITO");
+  }
+}
 
 void setup() {
-  pinMode(ledVerde, OUTPUT);
-  pinMode(ledRosso, OUTPUT);
+  pinMode(rgbLedR, OUTPUT);
+  pinMode(rgbLedG, OUTPUT);
+  pinMode(rgbLedB, OUTPUT);
   pinMode(releClacson, OUTPUT);
-  digitalWrite(ledVerde, HIGH);  // LED verde acceso (allarme disinserito)
-  digitalWrite(ledRosso, LOW);   // LED rosso spento
+  
+  rgbLedOff();  // RGB LED spento inizialmente
   digitalWrite(releClacson, LOW);
 
+  // Inizializzazione display
+  tft.init();
+  tft.setRotation(1); // Orientamento landscape
+  tft.fillScreen(TFT_BLACK);
+  
   Serial.begin(115200);
   SerialBT.begin("ESP32-CAMPER");
   SerialBT.println("Allarme pronto!");
+  
+  // Display iniziale
+  aggiornaDisplay();
 }
 
 void loop() {
+  // Verifica connessione Bluetooth
+  bool nuovoStatoBluetooth = SerialBT.hasClient();
+  if (nuovoStatoBluetooth != bluetoothConnesso) {
+    bluetoothConnesso = nuovoStatoBluetooth;
+    aggiornaDisplay();
+    
+    if (!bluetoothConnesso) {
+      // Bluetooth disconnesso - spegni LED RGB e resetta allarme
+      rgbLedOff();
+      allarmeInserito = false;
+    } else {
+      // Bluetooth connesso - LED verde
+      rgbLedGreen();
+    }
+  }
+  
   // Ricezione comandi Bluetooth
   if (SerialBT.available()) {
     String comando = SerialBT.readStringUntil('\n');
@@ -39,13 +114,12 @@ void loop() {
 
     if (comando == "1") {
       allarmeInserito = true;
-      digitalWrite(ledVerde, LOW);
-      digitalWrite(ledRosso, HIGH); // LED rosso acceso (sarà lampeggiato dopo)
+      aggiornaDisplay();
       SerialBT.println("Allarme inserito");
     } else if (comando == "0") {
       allarmeInserito = false;
-      digitalWrite(ledVerde, HIGH);
-      digitalWrite(ledRosso, LOW);
+      aggiornaDisplay();
+      rgbLedGreen(); // Torna verde quando connesso ma disinserito
       digitalWrite(releClacson, LOW);
       SerialBT.println("Allarme disinserito");
     } else if (comando == "T") {
@@ -58,8 +132,8 @@ void loop() {
     }
   }
 
-  // Se allarme inserito, controlla accelerometro
-  if (allarmeInserito) {
+  // Se allarme inserito, controlla accelerometro e gestisci LED lampeggiante
+  if (allarmeInserito && bluetoothConnesso) {
     int x = analogRead(xPin);
     int y = analogRead(yPin);
     int z = analogRead(zPin);
@@ -75,10 +149,18 @@ void loop() {
       digitalWrite(releClacson, LOW);
       delay(1000); // Anti-rimbalzo
     }
-    // LED rosso lampeggiante
-    digitalWrite(ledRosso, HIGH);
-    delay(400);
-    digitalWrite(ledRosso, LOW);
-    delay(400);
+    
+    // LED rosso lampeggiante ogni secondo
+    if (millis() - ultimoBlinkLed >= 1000) {
+      ultimoBlinkLed = millis();
+      statoLedRosso = !statoLedRosso;
+      if (statoLedRosso) {
+        rgbLedRed();
+      } else {
+        rgbLedOff();
+      }
+    }
   }
+  
+  delay(50); // Piccola pausa per evitare sovraccarico CPU
 }
