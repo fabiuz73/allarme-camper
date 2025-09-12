@@ -1,3 +1,15 @@
+/*
+ * NOTA: Questo file è una versione semplificata.
+ * 
+ * Per la versione completa con display TFT e RGB LED,
+ * utilizzare allarme_camper.ino che include:
+ * - Display TFT con messaggi di stato
+ * - RGB LED con feedback visivo
+ * - Rilevamento stato connessione Bluetooth
+ * - Controllo relè e test clacson
+ * 
+ */
+
 #include "BluetoothSerial.h"
 
 BluetoothSerial SerialBT;
