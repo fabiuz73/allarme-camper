@@ -21,12 +21,20 @@ const int xPin = 34;
 const int yPin = 35;
 const int zPin = 32;
 
+// Pin pulsanti fisici per controllo allarme
+const int buttonInserisci = 16;  // Pulsante per inserire allarme (GPIO16)
+const int buttonDisinserisci = 17;  // Pulsante per disinserire allarme (GPIO17)
+
 // Soglia movimento (modificabile da Bluetooth)
 int sogliaMovimento = 100;
 const int centro = 2048;
 
 bool allarmeInserito = false;
 bool giaConnesso = false;
+
+// Variabili per debounce dei pulsanti
+unsigned long lastButtonPress = 0;
+const unsigned long debounceDelay = 200;  // 200ms di debounce
 
 // Funzione per mostrare testo centrato sul display
 void showMessage(String testo, uint16_t colore = ST77XX_GREEN) {
@@ -56,6 +64,10 @@ void setup() {
   digitalWrite(ledVerde, HIGH);
   digitalWrite(ledRosso, LOW);
   digitalWrite(releClacson, LOW);
+
+  // Configurazione pulsanti fisici con INPUT_PULLUP
+  pinMode(buttonInserisci, INPUT_PULLUP);
+  pinMode(buttonDisinserisci, INPUT_PULLUP);
 
   Serial.begin(115200);
   SerialBT.begin("ESP32-CAMPER");
@@ -134,6 +146,32 @@ void loop() {
       showMessage("COMANDO ERRATO", ST77XX_YELLOW);
       delay(1000);
       showMessage(allarmeInserito ? "ALLARME INSERITO" : "ALLARME DISINSERITO", allarmeInserito ? ST77XX_RED : ST77XX_GREEN);
+    }
+  }
+
+  // Gestione pulsanti fisici con debounce
+  unsigned long currentTime = millis();
+  if (currentTime - lastButtonPress > debounceDelay) {
+    // Lettura pulsante inserisci allarme (GPIO16)
+    if (digitalRead(buttonInserisci) == LOW) {
+      allarmeInserito = true;
+      digitalWrite(ledVerde, LOW);
+      digitalWrite(ledRosso, HIGH);
+      SerialBT.println("Allarme inserito tramite pulsante");
+      Serial.println("Allarme inserito tramite pulsante fisico GPIO16");
+      showMessage("ALLARME INSERITO", ST77XX_RED);
+      lastButtonPress = currentTime;  // Aggiorna il tempo dell'ultimo pulsante premuto
+    }
+    // Lettura pulsante disinserisci allarme (GPIO17)
+    else if (digitalRead(buttonDisinserisci) == LOW) {
+      allarmeInserito = false;
+      digitalWrite(ledVerde, HIGH);
+      digitalWrite(ledRosso, LOW);
+      digitalWrite(releClacson, LOW);
+      SerialBT.println("Allarme disinserito tramite pulsante");
+      Serial.println("Allarme disinserito tramite pulsante fisico GPIO17");
+      showMessage("ALLARME DISINSERITO", ST77XX_GREEN);
+      lastButtonPress = currentTime;  // Aggiorna il tempo dell'ultimo pulsante premuto
     }
   }
 

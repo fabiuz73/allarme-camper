@@ -20,6 +20,8 @@ Sistema di allarme per camper basato su **ESP32** con display LCD da 1,14 pollic
 | 12             | LED Verde        | Allarme disinserito       |
 | 13             | LED Rosso        | Allarme inserito          |
 | 14             | Relè clacson     | Attivazione clacson       |
+| 16             | Pulsante fisico  | Inserisci allarme (INPUT_PULLUP) |
+| 17             | Pulsante fisico  | Disinserisci allarme (INPUT_PULLUP) |
 | 34             | ADXL335 X        | Movimento asse X          |
 | 35             | ADXL335 Y        | Movimento asse Y          |
 | 32             | ADXL335 Z / TFT BL | Movimento asse Z / Retroilluminazione display |
@@ -35,9 +37,11 @@ Sistema di allarme per camper basato su **ESP32** con display LCD da 1,14 pollic
 
 - Visualizzazione stato allarme su display
 - Modifica soglia di movimento tramite app Bluetooth
+- **Controllo fisico con pulsanti: inserimento/disinserimento allarme tramite pulsanti su GPIO16 e GPIO17**
 - Inserimento/disinserimento allarme e test clacson
 - Rilevamento movimento tramite accelerometro
 - Memorizzazione e visualizzazione soglia attuale
+- **Debounce software per prevenire attivazioni accidentali dei pulsanti**
 
 ## App Flutter
 
@@ -65,6 +69,10 @@ ESP32         Display ST7789
 ESP32         LED
   12   <-->   Verde
   13   <-->   Rosso
+
+ESP32         Pulsanti fisici
+  16   <-->   Pulsante inserisci allarme (con resistenza pull-up)
+  17   <-->   Pulsante disinserisci allarme (con resistenza pull-up)
 
 ESP32         LED RGB KY-016 FZ0455
   D1   <-->   Rosso (PWM)
